@@ -5,6 +5,7 @@ import java.io.IOException;
 import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
 import java.util.List;
+import java.util.Map;
 
 import com.maxtech.data.db2.CallDb;
 import com.maxtech.data.oracle.ConnectJdbc;
@@ -18,8 +19,35 @@ public class Main {
 	
 	public static void main(String[] args) throws FileNotFoundException, SQLException, ClassNotFoundException, IOException, InstantiationException, IllegalAccessException {
 		System.out.println("Oracle to DB2 数据迁移开始...");
-		
-		String tableName = "TS_MK_INFO12500";
+		String[] tables = {"TS_JYMK_INFO","TB_SYSTEM_MK_SP_SX12500","TS_MK_SP_FX12500",
+				"TS_MK_INFO12500","TS_SP_PP_INFO","TS_MK_PIC12500","ts_mk_sp_sx12500","TS_ASSET_INFO","TS_MK_SP_ML"};
+		 
+		for (int i = 0; i < tables.length; i++) {
+			String tableName = tables[i];
+			System.out.println("开始对表 "+tableName+"进行数据迁移");
+			System.out.println();
+			invokeMove(tableName);
+			System.out.println("-----"+tableName+"--move----done!--------------------------");
+		}
+		// 关闭连接
+		ConnectJdbc.closeConn();
+		CallDb.closeConn();
+	}
+	
+	/**
+	 * 执行 数据 移动  ora->db2
+	 * @param tableName
+	 * @throws IOException 
+	 * @throws ClassNotFoundException 
+	 * @throws SQLException 
+	 * @throws FileNotFoundException 
+	 * @throws IllegalAccessException 
+	 * @throws InstantiationException 
+	 */
+	public static void invokeMove(String tableName) throws FileNotFoundException, SQLException, ClassNotFoundException, IOException, InstantiationException, IllegalAccessException{
+		if(tableName == null || "".equals(tableName)){
+			return;
+		}
 		
 		// 获取 oracle 表结构
 		ResultSetMetaData meta = ConnectJdbc.redTable(tableName);
@@ -33,10 +61,14 @@ public class Main {
 		
 		for (int i = 1; i <= meta.getColumnCount(); i++) {
 			if(i < meta.getColumnCount()){
-				createTableSql.append(meta.getColumnName(i)).append(" ").append(FiledTypeConvert.converOraToDB2(meta.getColumnTypeName(i),meta.getPrecision(i))).append(",");
+				createTableSql.append(meta.getColumnName(i))
+					.append(" ").append(FiledTypeConvert
+							.converOraToDB2(meta.getColumnTypeName(i),meta.getPrecision(i),meta.getScale(i))).append(",");
 				
 			}else{
-				createTableSql.append(meta.getColumnName(i)).append(" ").append(FiledTypeConvert.converOraToDB2(meta.getColumnTypeName(i),meta.getPrecision(i)));
+				createTableSql.append(meta.getColumnName(i))
+					.append(" ").append(FiledTypeConvert
+							.converOraToDB2(meta.getColumnTypeName(i),meta.getPrecision(i),meta.getScale(i)));
 			}
 			createTableSql.append("\r\n");
 		}
@@ -75,13 +107,13 @@ public class Main {
 				sql.append(meta.getColumnName(i)).append(" from " +tableName);
 			}
 		}
-    	
+//    	sql.append(" where TS_MK_ID = '00000000ED389111565141EDE043AE1410AC09FD'");
     	System.out.println("数据查询语句");
     	System.out.println(sql.toString());
     	System.out.println();
     	System.out.println("开始查询数据");
     	
-		List<String> insertSqls = ConnectJdbc.getSqlStatements(sql.toString(), meta, tableName);
+    	List<Map<String,Object>> insertSqls = ConnectJdbc.getSqlStatements(sql.toString(), meta, tableName);
 		
 		// 向DB2 中插入数据 OK
 		if(insertSqls == null || insertSqls.size() == 0){
@@ -90,12 +122,31 @@ public class Main {
 		}
 		
 		System.out.println("添加数据（"+insertSqls.size()+"）语句： "+tableName);
+		System.out.println("执行insert 语句:");
 		for (int i = 0; i < insertSqls.size(); i++) {
-			System.out.println("执行insert 语句:"+(i+1)+"/"+insertSqls.size());
-			CallDb.excuteSql(insertSqls.get(i));
+			System.out.println((i+1)+"/"+insertSqls.size());
+			
+			String insertSql = (String) insertSqls.get(i).get("sql");
+			List<Object> params = (List<Object>) insertSqls.get(i).get("params");
+			
+//			System.out.println(insertSql);
+//			StringBuffer sb = new StringBuffer();
+//			for (int j = 0; j < params.size(); j++) {
+//				Object p = params.get(j);
+//				if(p != null){
+//					sb.append(p.toString()).append("\r\n");
+//				}else{
+//					sb.append("null").append("\r\n");
+//				}
+//			}
+//			System.out.println(sb.toString());
+			
+			if(params != null && params.size() >0){
+				CallDb.excuteSql(insertSql,params);
+			}else{
+				CallDb.excuteSql(insertSql);
+			}
 		}
-		// 关闭连接
-		ConnectJdbc.closeConn();
-		CallDb.closeConn();
+		CallDb.conn.commit();		
 	}
 }

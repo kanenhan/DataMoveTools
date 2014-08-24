@@ -5,6 +5,7 @@
 	<classpathentry kind="lib" path="libs/ojdbc14.jar"/>
 	<classpathentry kind="lib" path="libs/db2jcc_license_cu.jar"/>
 	<classpathentry kind="lib" path="libs/db2jcc.jar"/>
+	<classpathentry kind="lib" path="libs/log4j-1.2.17.jar"/>
 	<classpathentry kind="con" path="org.eclipse.jdt.junit.JUNIT_CONTAINER/4"/>
 	<classpathentry kind="output" path="bin"/>
 </classpath>

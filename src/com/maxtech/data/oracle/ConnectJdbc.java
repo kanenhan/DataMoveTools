@@ -3,16 +3,19 @@ package com.maxtech.data.oracle;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.IOException;
+import java.math.BigDecimal;
 import java.sql.Clob;
 import java.sql.Connection;
-import java.sql.Date;
 import java.sql.DriverManager;
 import java.sql.ResultSet;
 import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.sql.Timestamp;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Properties;
 
 import junit.framework.Assert;
@@ -32,8 +35,8 @@ public class ConnectJdbc {
     public static String DBUSER="e_channel";
     public static String password="e_channel_test";
     
-//    public static int maxsize = Integer.MAX_VALUE;
-    public static int maxsize = 10;
+    public static int maxsize = Integer.MAX_VALUE;
+//    public static int maxsize = 10;
     public static Connection conn = null;//表示数据库连接
     public static Connection getConnection() throws ClassNotFoundException, SQLException, FileNotFoundException, IOException{
     	if(conn == null){
@@ -69,8 +72,9 @@ public class ConnectJdbc {
 				sql.append(tableMeta.getColumnName(i)).append(" from " +tableName);
 			}
 		}
+    	
     	System.out.println(sql.toString());
-    	List<String> list = getSqlStatements(sql.toString(),tableMeta,tableName);
+    	List<Map<String,Object>> list = getSqlStatements(sql.toString(),tableMeta,tableName);
     	
     	for (int i = 0; i < list.size(); i++) {
 			System.out.println(list.get(i));
@@ -99,8 +103,9 @@ public class ConnectJdbc {
         return count;
     }
     
-    public static List<String> getSqlStatements(String sql, ResultSetMetaData tableMeta, String tableName) throws SQLException, FileNotFoundException, ClassNotFoundException, IOException{
-    	List<String> sqlList =new ArrayList<String>();
+    public static List<Map<String,Object>> getSqlStatements(String sql, ResultSetMetaData tableMeta, String tableName) throws SQLException, FileNotFoundException, ClassNotFoundException, IOException{
+//    	List<String> sqlList =new ArrayList<String>();
+    	List<Map<String,Object>> sqlList = new ArrayList<Map<String,Object>>();
     	conn = getConnection();
     	Statement stmt= null;//表示数据库的更新
     	ResultSet result = null;//查询数据库    
@@ -112,11 +117,14 @@ public class ConnectJdbc {
         System.out.println("数据共  "+rowCount+"  条，开始拼装insert sql语句");
         
         int i = 0;
+        System.out.println("拼接insert 语句:");
         while(result.next() && i < maxsize){//判断有没有下一行
+        	Map<String,Object> map = new HashMap<String,Object>(); 
         	i++;
-        	System.out.println("拼接insert 语句:"+i+"/"+rowCount);
+        	System.out.println(i+"/"+rowCount);
         	StringBuffer record = new StringBuffer();
         	StringBuffer after = new StringBuffer();
+        	List<Object> params = new ArrayList<Object>();
         	
         	record.append("INSERT INTO db2inst1.").append(tableName).append(" (");
         	after.append(") VALUES (");
@@ -138,12 +146,29 @@ public class ConnectJdbc {
 					break;
 				case 2:
 					// NUMBER
-					Integer num= result.getInt(j);
-					if(j<tableMeta.getColumnCount()){
-						after.append(num).append(",");
-	        		}else{
-	        			after.append(num).append(")");
-	        		}
+					// (38,0)-Integer;(n,m)-NUMBER(n,m);
+					// (0,-127)-NUMBER 未指定长度精度
+					// ora-db2 类型对应 http://www.cnblogs.com/newstar/archive/2010/04/13/1711486.html
+					// 
+					int p = tableMeta.getPrecision(j);
+					int s = tableMeta.getScale(j);
+					
+					if(p != 0 && s!= 0){
+						BigDecimal num= result.getBigDecimal(j);
+						if(j<tableMeta.getColumnCount()){
+							after.append(num).append(",");
+						}else{
+							after.append(num).append(")");
+						}
+					}else{
+						Integer num= result.getInt(j);
+						if(j<tableMeta.getColumnCount()){
+							after.append(num).append(",");
+						}else{
+							after.append(num).append(")");
+						}
+					}
+					
 					break;
 				case 12:
 					//VARCHAR2
@@ -156,23 +181,60 @@ public class ConnectJdbc {
 					break;
 				case 91:
 					//DATE
-					Date d = result.getDate(j);
+//					Date d = result.getDate(j);
+					Timestamp d = result.getTimestamp(j);
 					if(j<tableMeta.getColumnCount()){
-						after.append(d == null?"null":"'"+d+"'").append(",");
+						after.append(d == null?"null":"'"+d.toLocaleString()+"'").append(",");
 	        		}else{
-	        			after.append(d == null?"null":"'"+d+"'").append(")");
+	        			after.append(d == null?"null":"'"+d.toLocaleString()+"'").append(")");
 	        		}
+					break;
+				case 93:
+					//TIMESTAMP
+					Timestamp ta = result.getTimestamp(j);
+					if(j<tableMeta.getColumnCount()){
+						after.append(ta == null?"null":"'"+ta.toLocaleString()+"'").append(",");
+					}else{
+						after.append(ta == null?"null":"'"+ta.toLocaleString()+"'").append(")");
+					}
 					break;
 				case 2005:
 					//CLOB
 					Clob cl = result.getClob(j);
+					String content = null;
+//					if(cl != null && cl.length() > 0){
+						// 方法一 最快 但是有乱码问题
+//						InputStream input = cl.getAsciiStream();
+//						int len = (int)cl.length();
+//						byte by[] = new byte[len];
+//						while(-1 != (i = input.read(by, 0, by.length))){
+//							input.read(by, 0, i);
+//						}
+//						content = new String(by, "utf-8");
+						
+						// 方法二 简洁 无乱码
+//						content = cl.getSubString((long)1,(int)cl.length());
+						
+						// 方法三 无乱码  但是 效率太低
+//						Reader is = cl.getCharacterStream();// 得到流   
+//			            BufferedReader br = new BufferedReader(is);   
+//			            String s = br.readLine();   
+//			            StringBuffer sb = new StringBuffer();   
+//			            while (s != null) {   
+//			                sb.append(s);   
+//			                sb.append("/n");   
+//			                s = br.readLine();   
+//			            }   
+//			            content = sb.toString().trim();   
+//					}
 					if(j<tableMeta.getColumnCount()){
-						after.append("null,");
-//						after.append(cl == null?null:cl.getAsciiStream()).append(",");
+						after.append("?").append(",");
 	        		}else{
-	        			after.append("null)");
-//	        			after.append(cl == null?null:cl.getAsciiStream()).append(")");
+	        			after.append("?").append(")");
 	        		}
+//					System.out.println(content);
+//					params.add(content);
+					params.add(cl);
 					break;
 				default:
 					System.out.println("新的字段类型（编码）:"+tableMeta.getColumnType(j));
@@ -182,7 +244,9 @@ public class ConnectJdbc {
 			}
 //        	after.append(";");//java 多语句执行 不需要“;”
         	record.append(after);
-        	sqlList.add(record.toString());
+        	map.put("sql", record.toString());
+        	map.put("params", params);
+        	sqlList.add(map);
         }
         stmt.close();
         result.close();
@@ -203,6 +267,35 @@ public class ConnectJdbc {
         System.out.println("表 " +tableName+" 共有 "+meta.getColumnCount()+" 列");
         System.out.println();
         return meta;
+    }
+    
+    public static ResultSet executeQuery(String sql){
+    	try {
+			conn = getConnection();
+		} catch (FileNotFoundException e) {
+			e.printStackTrace();
+		} catch (ClassNotFoundException e) {
+			e.printStackTrace();
+		} catch (SQLException e) {
+			e.printStackTrace();
+		} catch (IOException e) {
+			e.printStackTrace();
+		}
+    	Statement stmt= null;//表示数据库的更新
+        ResultSet result = null;//查询数据库    
+        //Statement接口要通过connection接口来进行实例化操作
+		try {
+			stmt = conn.createStatement();
+		} catch (SQLException e) {
+			e.printStackTrace();
+		}
+        //执行SQL语句来查询数据库
+        try {
+			result =stmt.executeQuery(sql);
+		} catch (SQLException e) {
+			e.printStackTrace();
+		}
+        return result;
     }
     
     @Test
